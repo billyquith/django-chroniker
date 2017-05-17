@@ -257,10 +257,7 @@ def get_cpu_usage(pid, interval=1):
     #    except ValueError:
     #        return
     # Fix for psutil cross-version compatibility
-    try:
-        usage = psutil.Process(pid).get_cpu_times(interval=interval)
-    except AttributeError:
-        usage = psutil.Process(pid).cpu_times(interval=interval)
+    usage = psutil.Process(pid).cpu_times(interval=interval)
     return usage
 
 
@@ -332,23 +329,14 @@ class TimedProcess(Process):
         if self.is_alive() and self._p:
             # Explicitly kill children since the default terminate() doesn't
             # seem to do this very reliably.
-            try:
-                for child in self._p.get_children():
-                    # Do one last time check.
-                    self._process_times[child.pid] = child.get_cpu_times().user
-                    os.system('kill -%i %i' % (sig, child.pid,))
-                # Sum final time.
-                self._process_times[self._p.pid] = self._p.get_cpu_times().user
-                self._last_duration_seconds = sum(self._process_times.itervalues())
-            except AttributeError:
-                for child in self._p.children():
-                    # Do one last time check.
-                    self._process_times[child.pid] = child.cpu_times().user
-                    os.system('kill -%i %i' % (sig, child.pid,))
-                # Sum final time.
-                self._process_times[self._p.pid] = self._p.cpu_times().user
-                self._last_duration_seconds = sum(self._process_times.values())
-                #
+            for child in self._p.children():
+                # Do one last time check.
+                self._process_times[child.pid] = child.cpu_times().user
+                os.system('kill -%i %i' % (sig, child.pid,))
+            # Sum final time.
+            self._process_times[self._p.pid] = self._p.cpu_times().user
+            self._last_duration_seconds = sum(self._process_times.values())
+            #
         os.system('kill -%i %i' % (sig, self._p.pid,))
         # return super(TimedProcess, self).terminate(*args, **kwargs)
 
@@ -369,47 +357,28 @@ class TimedProcess(Process):
         # Note, we must store historical child times because child
         # processes may die, causing them to no longer be included in
         # future calculations, possibly corrupting the total time.
-        try:
-            self._process_times[self._p.pid] = self._p.get_cpu_times().user
-            children = self._p.get_children(recursive=True)
-            #
-            for child in children:
-                self._process_times[child.pid] = child.get_cpu_times().user
-            #
-            sum_proc_times = sum(self._process_times.itervalues())
-        except AttributeError:
-            self._process_times[self._p.pid] = self._p.cpu_times().user
-            children = self._p.children(recursive=True)
-            #
-            for child in children:
-                self._process_times[child.pid] = child.cpu_times().user
-            #
-            sum_proc_times = sum(self._process_times.values())
+        self._process_times[self._p.pid] = self._p.cpu_times().user
+        children = self._p.children(recursive=True)
+        #
+        for child in children:
+            self._process_times[child.pid] = child.cpu_times().user
+        #
+        sum_proc_times = sum(self._process_times.values())
         # TODO:optimize by storing total sum and tracking incremental changes?
         return sum_proc_times
 
     def get_cpu_usage_recursive(self, interval=1):
         usage = 0
         try:
-            try:
-                usage = self._p.get_cpu_percent(interval=interval)
-                children = self._p.get_children(recursive=True)
-                #
-                for child in children:
-                    try:
-                        usage += child.get_cpu_percent(interval=interval)
-                    except psutil._error.NoSuchProcess:
-                        pass
-            except AttributeError:
-                usage = self._p.cpu_percent(interval=interval)
-                children = self._p.children(recursive=True)
-                #
-                for child in children:
-                    try:
-                        usage += child.cpu_percent(interval=interval)
-                    except psutil._error.NoSuchProcess:
-                        pass
-                        #
+            usage = self._p.cpu_percent(interval=interval)
+            children = self._p.children(recursive=True)
+            #
+            for child in children:
+                try:
+                    usage += child.cpu_percent(interval=interval)
+                except psutil._error.NoSuchProcess:
+                    pass
+                    #
         except psutil._error.NoSuchProcess:
             pass
         return usage
